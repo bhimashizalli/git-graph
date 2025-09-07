@@ -23,6 +23,20 @@ class AdvancedGitVisualizer {
         this.searchTerm = '';
         this.timeFilter = { from: null, to: null };
 
+        // D3.js integration
+        this.svg = null;
+        this.mainGroup = null;
+        this.selectedCommit = null;
+        this.tooltip = null;
+
+        // Enhanced layout settings
+        this.layoutSettings = {
+            commitSpacing: 120,
+            branchSpacing: 80,
+            nodeRadius: 6,
+            animationDuration: 300
+        };
+
         this.branchColors = {
             'main': '#1FB8CD',
             'master': '#1FB8CD',
@@ -44,10 +58,39 @@ class AdvancedGitVisualizer {
     }
 
     init() {
+        this.initializeD3();
         this.loadSampleData();
         this.bindEvents();
         this.setupSVGInteractions();
         this.initializeMinimap();
+    }
+
+    initializeD3() {
+        // Check if D3.js is available
+        if (typeof d3 !== 'undefined') {
+            // Initialize D3 SVG selection
+            this.svg = d3.select('#gitGraph');
+            
+            // Setup tooltip with D3
+            this.tooltip = d3.select('body')
+                .append('div')
+                .attr('class', 'd3-tooltip')
+                .style('opacity', 0)
+                .style('position', 'absolute')
+                .style('background-color', 'var(--color-surface)')
+                .style('border', '1px solid var(--color-border)')
+                .style('border-radius', 'var(--radius-base)')
+                .style('padding', 'var(--space-8)')
+                .style('box-shadow', 'var(--shadow-md)')
+                .style('z-index', '1000')
+                .style('pointer-events', 'none');
+                
+            this.d3Available = true;
+        } else {
+            console.warn('D3.js not available, falling back to vanilla JS implementation');
+            this.d3Available = false;
+            this.svg = document.getElementById('gitGraph');
+        }
     }
 
     loadSampleData() {
@@ -499,10 +542,51 @@ class AdvancedGitVisualizer {
             }
 
             commit.lane = laneMap.get(commit.branch);
-            commit.x = index * 120 + 80; // Increased spacing for better readability
-            commit.y = commit.lane * 80 + 100; // Increased vertical spacing
+            commit.x = index * this.layoutSettings.commitSpacing + 80; // Enhanced spacing
+            commit.y = commit.lane * this.layoutSettings.branchSpacing + 100; // Enhanced vertical spacing
             commit.shortHash = commit.hash.substring(0, 7); // Extract short hash
         });
+
+        // Apply D3 force simulation for improved network layout
+        this.enhanceLayoutWithD3();
+    }
+
+    enhanceLayoutWithD3() {
+        // Only run D3.js enhancement if D3.js is available
+        if (!this.d3Available) {
+            console.log('D3.js not available, skipping enhanced layout');
+            return;
+        }
+
+        const commits = this.filteredData.commits;
+        
+        // Create links between connected commits
+        const links = [];
+        commits.forEach(commit => {
+            if (commit.parents) {
+                commit.parents.forEach(parentHash => {
+                    const parent = commits.find(c => c.hash === parentHash);
+                    if (parent) {
+                        links.push({
+                            source: parent,
+                            target: commit
+                        });
+                    }
+                });
+            }
+        });
+
+        // Apply subtle force simulation to improve visual arrangement
+        const simulation = d3.forceSimulation(commits)
+            .force('link', d3.forceLink(links).id(d => d.hash).distance(this.layoutSettings.commitSpacing * 0.8))
+            .force('charge', d3.forceManyBody().strength(-50))
+            .force('center', d3.forceCenter(400, 300))
+            .force('y', d3.forceY(d => d.lane * this.layoutSettings.branchSpacing + 100).strength(0.8))
+            .force('x', d3.forceX().strength(0.1))
+            .stop();
+
+        // Run simulation for a few iterations to improve layout without full animation
+        for (let i = 0; i < 100; ++i) simulation.tick();
     }
 
     inferBranch(commit) {
@@ -617,34 +701,51 @@ class AdvancedGitVisualizer {
     render() {
         this.renderStartTime = performance.now();
 
-        const svg = document.getElementById('gitGraph');
-
-        // Clear SVG completely to prevent overlapping issues
-        while (svg.firstChild) {
-            svg.removeChild(svg.firstChild);
-        }
-
         const visibleCommits = this.getVisibleCommits();
         if (visibleCommits.length === 0) {
-            this.renderEmptyState(svg);
+            this.renderEmptyState();
             return;
         }
 
         // Calculate bounds
         const bounds = this.calculateBounds(visibleCommits);
-        svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+        
+        if (this.d3Available) {
+            // Use D3.js enhanced rendering
+            this.svg.attr('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+            
+            // Clear and recreate main group with D3
+            this.svg.selectAll('*').remove();
+            this.mainGroup = this.svg.append('g').attr('id', 'mainGroup');
 
-        // Create main group for transformations
-        const mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        mainGroup.setAttribute('id', 'mainGroup');
+            // Render components with D3 in proper order
+            this.renderBranchLinesD3(visibleCommits);
+            this.renderMergeLinesD3(visibleCommits);
+            this.renderCommitsD3(visibleCommits);
+            this.renderBranchLabelsD3(visibleCommits);
+        } else {
+            // Fall back to vanilla JS rendering with enhancements
+            this.svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+            
+            // Clear SVG completely to prevent overlapping issues
+            while (this.svg.firstChild) {
+                this.svg.removeChild(this.svg.firstChild);
+            }
 
-        // Render components in proper order to prevent overlapping
-        this.renderBranchLines(mainGroup, visibleCommits);
-        this.renderMergeLines(mainGroup, visibleCommits);
-        this.renderCommits(mainGroup, visibleCommits);
-        this.renderBranchLabels(mainGroup, visibleCommits);
+            // Create main group for transformations
+            const mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            mainGroup.setAttribute('id', 'mainGroup');
+            this.mainGroup = mainGroup;
 
-        svg.appendChild(mainGroup);
+            // Render components in proper order
+            this.renderBranchLinesEnhanced(mainGroup, visibleCommits);
+            this.renderMergeLinesEnhanced(mainGroup, visibleCommits);
+            this.renderCommitsEnhanced(mainGroup, visibleCommits);
+            this.renderBranchLabelsEnhanced(mainGroup, visibleCommits);
+
+            this.svg.appendChild(mainGroup);
+        }
+
         this.updateTransform();
         this.updateMinimap();
 
@@ -652,6 +753,33 @@ class AdvancedGitVisualizer {
         const renderTime = performance.now() - this.renderStartTime;
         document.getElementById('renderTime').textContent = Math.round(renderTime) + 'ms';
         document.getElementById('visibleArea').textContent = `${Math.round((this.currentZoom * 100))}%`;
+    }
+
+    renderEmptyState() {
+        if (this.d3Available) {
+            this.svg.selectAll('*').remove();
+            this.svg.append('text')
+                .attr('x', 400)
+                .attr('y', 300)
+                .attr('text-anchor', 'middle')
+                .attr('font-family', 'var(--font-family-base)')
+                .attr('font-size', '16')
+                .attr('fill', 'var(--color-text-secondary)')
+                .text('No commits match current filters');
+        } else {
+            while (this.svg.firstChild) {
+                this.svg.removeChild(this.svg.firstChild);
+            }
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', '400');
+            text.setAttribute('y', '300');
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('font-family', 'var(--font-family-base)');
+            text.setAttribute('font-size', '16');
+            text.setAttribute('fill', 'var(--color-text-secondary)');
+            text.textContent = 'No commits match current filters';
+            this.svg.appendChild(text);
+        }
     }
 
     calculateBounds(commits) {
@@ -666,19 +794,76 @@ class AdvancedGitVisualizer {
         };
     }
 
-    renderEmptyState(svg) {
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', '400');
-        text.setAttribute('y', '300');
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('font-family', 'var(--font-family-base)');
-        text.setAttribute('font-size', '16');
-        text.setAttribute('fill', 'var(--color-text-secondary)');
-        text.textContent = 'No commits match current filters';
-        svg.appendChild(text);
+    // Enhanced D3.js rendering methods
+    renderCommitsD3(commits) {
+        if (!this.d3Available) return;
+
+        const commitGroup = this.mainGroup.append('g').attr('class', 'commits');
+
+        // Bind data and create circles
+        const circles = commitGroup.selectAll('.commit-circle')
+            .data(commits, d => d.hash);
+
+        // Enter selection with transitions
+        const circlesEnter = circles.enter()
+            .append('circle')
+            .attr('class', 'commit-circle')
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y)
+            .attr('r', 0)
+            .attr('fill', d => this.getBranchColor(d.branch))
+            .attr('stroke', '#ffffff')
+            .attr('stroke-width', 2)
+            .style('cursor', 'pointer');
+
+        // Add interactions with enhanced tooltip
+        circlesEnter
+            .on('mouseenter', (event, d) => {
+                this.showEnhancedTooltip(event, d);
+                // Highlight connected commits
+                this.highlightConnectedCommits(d);
+            })
+            .on('mouseleave', () => {
+                this.hideEnhancedTooltip();
+                this.removeHighlights();
+            })
+            .on('click', (event, d) => {
+                event.stopPropagation();
+                this.selectCommit(d);
+                this.showCommitModal(d);
+            });
+
+        // Animate circles to full size
+        circlesEnter
+            .transition()
+            .duration(this.layoutSettings.animationDuration)
+            .attr('r', Math.max(4, this.layoutSettings.nodeRadius / Math.sqrt(this.currentZoom)));
+
+        // Add commit labels for better zoom levels
+        if (this.currentZoom > 0.5) {
+            const labels = commitGroup.selectAll('.commit-text')
+                .data(commits, d => d.hash);
+
+            labels.enter()
+                .append('text')
+                .attr('class', 'commit-text')
+                .attr('x', d => d.x)
+                .attr('y', d => d.y - 15)
+                .attr('text-anchor', 'middle')
+                .attr('font-size', Math.max(8, 10 / Math.sqrt(this.currentZoom)))
+                .attr('fill', 'var(--color-text)')
+                .attr('font-family', 'var(--font-family-mono)')
+                .style('opacity', 0)
+                .text(d => d.shortHash)
+                .transition()
+                .duration(this.layoutSettings.animationDuration)
+                .style('opacity', 1);
+        }
     }
 
-    renderBranchLines(container, commits) {
+    renderBranchLinesD3(commits) {
+        if (!this.d3Available) return;
+
         const branches = {};
 
         // Group commits by branch
@@ -689,7 +874,174 @@ class AdvancedGitVisualizer {
             branches[commit.branch].push(commit);
         });
 
-        // Draw lines for each branch
+        const lineGroup = this.mainGroup.append('g').attr('class', 'branch-lines');
+
+        // Draw lines for each branch with D3
+        Object.entries(branches).forEach(([branchName, branchCommits]) => {
+            if (branchCommits.length < 2) return;
+
+            // Sort by x position
+            branchCommits.sort((a, b) => a.x - b.x);
+
+            const lineGenerator = d3.line()
+                .x(d => d.x)
+                .y(d => d.y)
+                .curve(d3.curveLinear);
+
+            lineGroup.append('path')
+                .datum(branchCommits)
+                .attr('class', 'branch-line')
+                .attr('d', lineGenerator)
+                .attr('stroke', this.getBranchColor(branchName))
+                .attr('fill', 'none')
+                .attr('stroke-width', 2)
+                .style('opacity', 0)
+                .transition()
+                .duration(this.layoutSettings.animationDuration)
+                .style('opacity', 1);
+        });
+    }
+
+    renderMergeLinesD3(commits) {
+        if (!this.d3Available) return;
+        if (!this.filteredData.merges) return;
+
+        const mergeGroup = this.mainGroup.append('g').attr('class', 'merge-lines');
+
+        this.filteredData.merges.forEach(merge => {
+            const mergeCommit = commits.find(c => c.hash === merge.commit);
+            if (!mergeCommit) return;
+
+            merge.parents.forEach(parentHash => {
+                const parentCommit = commits.find(c => c.hash === parentHash);
+                if (!parentCommit || parentCommit.lane === mergeCommit.lane) return;
+
+                // Create curved merge line with D3
+                const curveGenerator = d3.line()
+                    .x(d => d.x)
+                    .y(d => d.y)
+                    .curve(d3.curveCardinal);
+
+                const midX = (parentCommit.x + mergeCommit.x) / 2;
+                const curveData = [
+                    { x: parentCommit.x, y: parentCommit.y },
+                    { x: midX, y: parentCommit.y },
+                    { x: mergeCommit.x, y: mergeCommit.y }
+                ];
+
+                mergeGroup.append('path')
+                    .datum(curveData)
+                    .attr('class', 'branch-line merge-line')
+                    .attr('d', curveGenerator)
+                    .attr('stroke', this.getBranchColor(mergeCommit.branch))
+                    .attr('fill', 'none')
+                    .attr('stroke-dasharray', '4,2')
+                    .attr('stroke-width', 1.5)
+                    .style('opacity', 0)
+                    .transition()
+                    .duration(this.layoutSettings.animationDuration)
+                    .style('opacity', 0.7);
+            });
+        });
+    }
+
+    renderBranchLabelsD3(commits) {
+        if (!this.d3Available) return;
+
+        const lanes = [...new Set(commits.map(c => c.lane))].sort((a, b) => a - b);
+        const labelGroup = this.mainGroup.append('g').attr('class', 'branch-labels');
+
+        const labels = labelGroup.selectAll('.branch-label')
+            .data(lanes.map(lane => {
+                const laneCommits = commits.filter(c => c.lane === lane);
+                return {
+                    lane,
+                    branchName: laneCommits[0]?.branch,
+                    y: lane * this.layoutSettings.branchSpacing + 100
+                };
+            }));
+
+        labels.enter()
+            .append('text')
+            .attr('class', 'branch-label')
+            .attr('x', 20)
+            .attr('y', d => d.y + 5)
+            .attr('fill', d => this.getBranchColor(d.branchName))
+            .attr('font-family', 'var(--font-family-base)')
+            .attr('font-size', '11')
+            .attr('font-weight', '600')
+            .style('opacity', 0)
+            .text(d => d.branchName)
+            .transition()
+            .duration(this.layoutSettings.animationDuration)
+            .style('opacity', 1);
+    }
+
+    // Enhanced vanilla JS rendering methods (D3.js fallback)
+    renderCommitsEnhanced(container, commits) {
+        commits.forEach(commit => {
+            // Commit circle with enhanced styling
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', commit.x);
+            circle.setAttribute('cy', commit.y);
+            circle.setAttribute('r', Math.max(4, this.layoutSettings.nodeRadius / Math.sqrt(this.currentZoom)));
+            circle.setAttribute('class', 'commit-circle');
+            circle.setAttribute('fill', this.getBranchColor(commit.branch));
+            circle.setAttribute('stroke', '#ffffff');
+            circle.setAttribute('stroke-width', '2');
+            circle.style.cursor = 'pointer';
+
+            // Store commit data
+            circle.commitData = commit;
+
+            // Enhanced event listeners
+            circle.addEventListener('mouseenter', (e) => {
+                e.stopPropagation();
+                this.showEnhancedTooltipVanilla(e, commit);
+                this.highlightConnectedCommitsVanilla(commit);
+            });
+            circle.addEventListener('mouseleave', (e) => {
+                e.stopPropagation();
+                this.hideEnhancedTooltipVanilla();
+                this.removeHighlightsVanilla();
+            });
+            circle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this.selectCommitVanilla(commit);
+                this.showCommitModal(commit);
+            });
+
+            container.appendChild(circle);
+
+            // Commit hash label with better zoom handling
+            if (this.currentZoom > 0.5) {
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', commit.x);
+                text.setAttribute('y', commit.y - 15);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('class', 'commit-text');
+                text.setAttribute('font-size', Math.max(8, 10 / Math.sqrt(this.currentZoom)));
+                text.setAttribute('fill', 'var(--color-text)');
+                text.setAttribute('font-family', 'var(--font-family-mono)');
+                text.textContent = commit.shortHash;
+                container.appendChild(text);
+            }
+        });
+    }
+
+    renderBranchLinesEnhanced(container, commits) {
+        const branches = {};
+
+        // Group commits by branch
+        commits.forEach(commit => {
+            if (!branches[commit.branch]) {
+                branches[commit.branch] = [];
+            }
+            branches[commit.branch].push(commit);
+        });
+
+        // Draw enhanced lines for each branch
         Object.entries(branches).forEach(([branchName, branchCommits]) => {
             if (branchCommits.length < 2) return;
 
@@ -706,11 +1058,12 @@ class AdvancedGitVisualizer {
             line.setAttribute('stroke', this.getBranchColor(branchName));
             line.setAttribute('fill', 'none');
             line.setAttribute('stroke-width', '2');
+            line.style.transition = 'opacity 250ms ease';
             container.appendChild(line);
         });
     }
 
-    renderMergeLines(container, commits) {
+    renderMergeLinesEnhanced(container, commits) {
         if (!this.filteredData.merges) return;
 
         this.filteredData.merges.forEach(merge => {
@@ -721,7 +1074,7 @@ class AdvancedGitVisualizer {
                 const parentCommit = commits.find(c => c.hash === parentHash);
                 if (!parentCommit || parentCommit.lane === mergeCommit.lane) return;
 
-                // Draw curved merge line
+                // Enhanced curved merge line
                 const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                 const midX = (parentCommit.x + mergeCommit.x) / 2;
                 const path = `M ${parentCommit.x} ${parentCommit.y} Q ${midX} ${parentCommit.y} ${mergeCommit.x} ${mergeCommit.y}`;
@@ -732,60 +1085,14 @@ class AdvancedGitVisualizer {
                 line.setAttribute('fill', 'none');
                 line.setAttribute('stroke-dasharray', '4,2');
                 line.setAttribute('stroke-width', '1.5');
+                line.style.opacity = '0.7';
+                line.style.transition = 'opacity 250ms ease';
                 container.appendChild(line);
             });
         });
     }
 
-    renderCommits(container, commits) {
-        commits.forEach(commit => {
-            // Commit circle
-            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            circle.setAttribute('cx', commit.x);
-            circle.setAttribute('cy', commit.y);
-            circle.setAttribute('r', Math.max(4, 6 / Math.sqrt(this.currentZoom))); // Scale with zoom
-            circle.setAttribute('class', 'commit-circle');
-            circle.setAttribute('fill', this.getBranchColor(commit.branch));
-            circle.setAttribute('stroke', '#ffffff');
-            circle.setAttribute('stroke-width', '2');
-
-            // Store commit data
-            circle.commitData = commit;
-
-            // Event listeners
-            circle.addEventListener('mouseenter', (e) => {
-                e.stopPropagation();
-                this.showTooltip(e, commit);
-            });
-            circle.addEventListener('mouseleave', (e) => {
-                e.stopPropagation();
-                this.hideTooltip();
-            });
-            circle.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                this.showCommitModal(commit);
-            });
-
-            container.appendChild(circle);
-
-            // Commit hash label
-            if (this.currentZoom > 0.5) { // Only show text at reasonable zoom levels
-                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                text.setAttribute('x', commit.x);
-                text.setAttribute('y', commit.y - 15);
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('class', 'commit-text');
-                text.setAttribute('font-size', Math.max(8, 10 / Math.sqrt(this.currentZoom)));
-                text.setAttribute('fill', 'var(--color-text)');
-                text.setAttribute('font-family', 'var(--font-family-mono)');
-                text.textContent = commit.shortHash;
-                container.appendChild(text);
-            }
-        });
-    }
-
-    renderBranchLabels(container, commits) {
+    renderBranchLabelsEnhanced(container, commits) {
         const lanes = [...new Set(commits.map(c => c.lane))].sort((a, b) => a - b);
 
         lanes.forEach(lane => {
@@ -793,7 +1100,7 @@ class AdvancedGitVisualizer {
             if (laneCommits.length === 0) return;
 
             const branchName = laneCommits[0].branch;
-            const y = lane * 80 + 100;
+            const y = lane * this.layoutSettings.branchSpacing + 100;
 
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.setAttribute('x', '20');
@@ -806,6 +1113,210 @@ class AdvancedGitVisualizer {
             text.textContent = branchName;
             container.appendChild(text);
         });
+    }
+
+    // Enhanced interaction methods
+    selectCommit(commit) {
+        if (this.d3Available) {
+            // Remove previous selection
+            this.mainGroup.selectAll('.commit-circle')
+                .classed('selected', false)
+                .attr('stroke-width', 2);
+
+            // Add selection to current commit
+            this.mainGroup.selectAll('.commit-circle')
+                .filter(d => d.hash === commit.hash)
+                .classed('selected', true)
+                .attr('stroke-width', 4)
+                .attr('stroke', '#FFD700');
+        } else {
+            this.selectCommitVanilla(commit);
+        }
+        this.selectedCommit = commit;
+    }
+
+    selectCommitVanilla(commit) {
+        // Remove previous selection
+        const allCircles = this.mainGroup.querySelectorAll('.commit-circle');
+        allCircles.forEach(circle => {
+            circle.classList.remove('selected');
+            circle.setAttribute('stroke-width', '2');
+            circle.setAttribute('stroke', '#ffffff');
+        });
+
+        // Add selection to current commit
+        allCircles.forEach(circle => {
+            if (circle.commitData && circle.commitData.hash === commit.hash) {
+                circle.classList.add('selected');
+                circle.setAttribute('stroke-width', '4');
+                circle.setAttribute('stroke', '#FFD700');
+            }
+        });
+    }
+
+    highlightConnectedCommits(commit) {
+        if (this.d3Available) {
+            const connectedHashes = new Set([commit.hash]);
+            
+            // Add parents
+            if (commit.parents) {
+                commit.parents.forEach(parent => connectedHashes.add(parent));
+            }
+            
+            // Add children
+            this.filteredData.commits.forEach(c => {
+                if (c.parents && c.parents.includes(commit.hash)) {
+                    connectedHashes.add(c.hash);
+                }
+            });
+
+            // Apply highlighting
+            this.mainGroup.selectAll('.commit-circle')
+                .style('opacity', d => connectedHashes.has(d.hash) ? 1 : 0.3);
+
+            this.mainGroup.selectAll('.branch-line')
+                .style('opacity', 0.2);
+        } else {
+            this.highlightConnectedCommitsVanilla(commit);
+        }
+    }
+
+    highlightConnectedCommitsVanilla(commit) {
+        const connectedHashes = new Set([commit.hash]);
+        
+        // Add parents
+        if (commit.parents) {
+            commit.parents.forEach(parent => connectedHashes.add(parent));
+        }
+        
+        // Add children
+        this.filteredData.commits.forEach(c => {
+            if (c.parents && c.parents.includes(commit.hash)) {
+                connectedHashes.add(c.hash);
+            }
+        });
+
+        // Apply highlighting with vanilla JS
+        const allCircles = this.mainGroup.querySelectorAll('.commit-circle');
+        allCircles.forEach(circle => {
+            if (circle.commitData) {
+                circle.style.opacity = connectedHashes.has(circle.commitData.hash) ? '1' : '0.3';
+            }
+        });
+
+        const allLines = this.mainGroup.querySelectorAll('.branch-line');
+        allLines.forEach(line => {
+            line.style.opacity = '0.2';
+        });
+    }
+
+    removeHighlights() {
+        if (this.d3Available) {
+            this.mainGroup.selectAll('.commit-circle')
+                .style('opacity', 1);
+            this.mainGroup.selectAll('.branch-line')
+                .style('opacity', 1);
+        } else {
+            this.removeHighlightsVanilla();
+        }
+    }
+
+    removeHighlightsVanilla() {
+        const allCircles = this.mainGroup.querySelectorAll('.commit-circle');
+        allCircles.forEach(circle => {
+            circle.style.opacity = '1';
+        });
+
+        const allLines = this.mainGroup.querySelectorAll('.branch-line');
+        allLines.forEach(line => {
+            line.style.opacity = '1';
+        });
+    }
+
+    showEnhancedTooltip(event, commit) {
+        if (this.d3Available) {
+            const tooltip = this.tooltip;
+            
+            tooltip.transition()
+                .duration(200)
+                .style('opacity', 0.95);
+
+            const content = `
+                <div style="font-weight: 600; margin-bottom: 4px;">${commit.shortHash}</div>
+                <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px;">
+                    ${new Date(commit.date).toLocaleDateString()}
+                </div>
+                <div style="margin-bottom: 4px;"><strong>Author:</strong> ${commit.author}</div>
+                <div style="margin-bottom: 4px;"><strong>Branch:</strong> ${commit.branch}</div>
+                <div style="margin-bottom: 4px;"><strong>Message:</strong></div>
+                <div style="font-size: 12px; max-width: 200px;">${commit.message}</div>
+                ${commit.parents ? `<div style="font-size: 11px; margin-top: 8px; color: var(--color-text-secondary);">
+                    Parents: ${commit.parents.map(p => p.substring(0, 7)).join(', ')}
+                </div>` : ''}
+            `;
+
+            tooltip.html(content)
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px');
+        } else {
+            this.showEnhancedTooltipVanilla(event, commit);
+        }
+    }
+
+    showEnhancedTooltipVanilla(event, commit) {
+        // Create enhanced tooltip if it doesn't exist
+        let tooltip = document.querySelector('.enhanced-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.className = 'enhanced-tooltip d3-tooltip';
+            tooltip.style.position = 'absolute';
+            tooltip.style.backgroundColor = 'var(--color-surface)';
+            tooltip.style.border = '1px solid var(--color-border)';
+            tooltip.style.borderRadius = 'var(--radius-base)';
+            tooltip.style.padding = 'var(--space-8)';
+            tooltip.style.boxShadow = 'var(--shadow-md)';
+            tooltip.style.zIndex = '1000';
+            tooltip.style.pointerEvents = 'none';
+            tooltip.style.opacity = '0';
+            tooltip.style.transition = 'opacity 200ms ease';
+            document.body.appendChild(tooltip);
+        }
+
+        const content = `
+            <div style="font-weight: 600; margin-bottom: 4px;">${commit.shortHash}</div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px;">
+                ${new Date(commit.date).toLocaleDateString()}
+            </div>
+            <div style="margin-bottom: 4px;"><strong>Author:</strong> ${commit.author}</div>
+            <div style="margin-bottom: 4px;"><strong>Branch:</strong> ${commit.branch}</div>
+            <div style="margin-bottom: 4px;"><strong>Message:</strong></div>
+            <div style="font-size: 12px; max-width: 200px;">${commit.message}</div>
+            ${commit.parents ? `<div style="font-size: 11px; margin-top: 8px; color: var(--color-text-secondary);">
+                Parents: ${commit.parents.map(p => p.substring(0, 7)).join(', ')}
+            </div>` : ''}
+        `;
+
+        tooltip.innerHTML = content;
+        tooltip.style.left = (event.pageX + 10) + 'px';
+        tooltip.style.top = (event.pageY - 10) + 'px';
+        tooltip.style.opacity = '0.95';
+    }
+
+    hideEnhancedTooltip() {
+        if (this.d3Available) {
+            this.tooltip.transition()
+                .duration(300)
+                .style('opacity', 0);
+        } else {
+            this.hideEnhancedTooltipVanilla();
+        }
+    }
+
+    hideEnhancedTooltipVanilla() {
+        const tooltip = document.querySelector('.enhanced-tooltip');
+        if (tooltip) {
+            tooltip.style.opacity = '0';
+        }
     }
 
     // Event handlers
@@ -987,7 +1498,7 @@ class AdvancedGitVisualizer {
         document.getElementById('commitModal').classList.add('hidden');
     }
 
-    // Utility functions
+    // Enhanced keyboard shortcuts
     handleKeyboard(event) {
         // Don't interfere with form inputs
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
@@ -1009,15 +1520,118 @@ class AdvancedGitVisualizer {
                 this.resetView();
                 break;
             case 'f':
+            case 'F':
                 if (event.ctrlKey || event.metaKey) {
                     event.preventDefault();
                     document.getElementById('commitSearch').focus();
                 }
                 break;
             case 'Escape':
+                event.preventDefault();
                 this.hideModal();
+                this.hideEnhancedTooltip();
+                // Clear commit search
+                const searchInput = document.getElementById('commitSearch');
+                if (searchInput.value) {
+                    searchInput.value = '';
+                    this.searchCommits('');
+                }
+                break;
+            case 'r':
+            case 'R':
+                if (event.ctrlKey || event.metaKey) {
+                    event.preventDefault();
+                    this.resetView();
+                }
+                break;
+            case 's':
+            case 'S':
+                if (event.ctrlKey || event.metaKey) {
+                    event.preventDefault();
+                    this.exportSVG();
+                }
+                break;
+            case 'ArrowLeft':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panX += 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case 'ArrowRight':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panX -= 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case 'ArrowUp':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panY += 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case 'ArrowDown':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panY -= 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case '?':
+                if (!event.ctrlKey && !event.metaKey) {
+                    event.preventDefault();
+                    this.showKeyboardShortcuts();
+                }
                 break;
         }
+    }
+
+    // Show keyboard shortcuts help
+    showKeyboardShortcuts() {
+        const shortcuts = `
+        <div style="font-family: var(--font-family-base); line-height: 1.6;">
+            <h3 style="margin-top: 0;">Keyboard Shortcuts</h3>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 14px;">
+                <strong>+/=</strong><span>Zoom in</span>
+                <strong>-</strong><span>Zoom out</span>
+                <strong>0</strong><span>Reset view</span>
+                <strong>Ctrl/Cmd + F</strong><span>Focus search</span>
+                <strong>Ctrl/Cmd + S</strong><span>Export SVG</span>
+                <strong>Ctrl/Cmd + R</strong><span>Reset view</span>
+                <strong>Shift + Arrow keys</strong><span>Pan view</span>
+                <strong>Escape</strong><span>Close dialogs/clear search</span>
+                <strong>?</strong><span>Show this help</span>
+            </div>
+        </div>
+        `;
+
+        // Create or update help modal
+        let helpModal = document.getElementById('keyboardHelpModal');
+        if (!helpModal) {
+            helpModal = document.createElement('div');
+            helpModal.id = 'keyboardHelpModal';
+            helpModal.className = 'modal';
+            helpModal.innerHTML = `
+                <div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Help</h3>
+                        <button class="modal-close" onclick="this.closest('.modal').classList.add('hidden')">&times;</button>
+                    </div>
+                    <div class="modal-body" id="helpModalContent"></div>
+                </div>
+            `;
+            document.body.appendChild(helpModal);
+        }
+
+        document.getElementById('helpModalContent').innerHTML = shortcuts;
+        helpModal.classList.remove('hidden');
     }
 
     handleResize() {
