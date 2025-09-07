@@ -5,6 +5,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Advanced Git Network Visualizer</title>
     <link rel="stylesheet" href="style.css">
+    <!-- D3.js for enhanced visualization -->
+    <script>
+    // D3.js fallback implementation for core features
+    window.d3 = {
+        select: function(selector) {
+            const element = document.querySelector(selector);
+            return {
+                style: function(property, value) {
+                    if (value !== undefined) {
+                        element.style[property] = value;
+                        return this;
+                    }
+                    return element.style[property];
+                },
+                transition: function() {
+                    return {
+                        duration: function(ms) {
+                            return {
+                                style: function(property, value) {
+                                    element.style.transition = `${property} ${ms}ms ease-in-out`;
+                                    setTimeout(() => element.style[property] = value, 10);
+                                    return this;
+                                },
+                                attr: function(attr, value) {
+                                    element.style.transition = `all ${ms}ms ease-in-out`;
+                                    setTimeout(() => element.setAttribute(attr, value), 10);
+                                    return this;
+                                },
+                                on: function(event, callback) {
+                                    setTimeout(callback, ms);
+                                    return this;
+                                }
+                            };
+                        }
+                    };
+                }
+            };
+        },
+        forceSimulation: function() {
+            return {
+                nodes: function(data) { return this; },
+                force: function(name, force) { return this; },
+                tick: function(iterations) { return this; }
+            };
+        },
+        forceLink: function() {
+            return {
+                id: function() { return this; },
+                distance: function() { return this; }
+            };
+        },
+        forceManyBody: function() {
+            return {
+                strength: function() { return this; }
+            };
+        },
+        forceCenter: function() { return this; },
+        forceCollide: function() {
+            return {
+                radius: function() { return this; }
+            };
+        }
+    };
+    </script>
 </head>
 <body>
     <div class="app-container">

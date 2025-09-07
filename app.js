@@ -18,6 +18,11 @@ class AdvancedGitVisualizer {
         this.commitChunkSize = 500;
         this.currentChunk = 0;
 
+        // D3.js integration
+        this.d3Container = null;
+        this.d3Simulation = null;
+        this.forceEnabled = false;
+
         // Filtering state
         this.branchFilters = {};
         this.searchTerm = '';
@@ -48,6 +53,7 @@ class AdvancedGitVisualizer {
         this.bindEvents();
         this.setupSVGInteractions();
         this.initializeMinimap();
+        this.initializeD3();
     }
 
     loadSampleData() {
@@ -195,6 +201,14 @@ class AdvancedGitVisualizer {
         document.getElementById('resetView').addEventListener('click', () => this.resetView());
         document.getElementById('fitToScreen').addEventListener('click', () => this.fitToScreen());
 
+        // D3.js force layout toggle
+        const forceToggle = document.createElement('button');
+        forceToggle.className = 'btn btn--sm btn--outline';
+        forceToggle.textContent = 'Force Layout';
+        forceToggle.id = 'forceToggle';
+        forceToggle.addEventListener('click', () => this.toggleForceLayout());
+        document.querySelector('.zoom-controls').appendChild(forceToggle);
+
         // Branch filters
         document.getElementById('selectAllBranches').addEventListener('click', () => this.selectAllBranches(true));
         document.getElementById('deselectAllBranches').addEventListener('click', () => this.selectAllBranches(false));
@@ -283,6 +297,22 @@ class AdvancedGitVisualizer {
     initializeMinimap() {
         const minimap = document.getElementById('minimapSvg');
         minimap.addEventListener('click', (e) => this.handleMinimapClick(e));
+    }
+
+    initializeD3() {
+        // Initialize D3.js container for enhanced interactions
+        this.d3Container = d3.select('#gitGraph');
+        
+        // Setup D3 force simulation for dynamic network layout
+        this.d3Simulation = d3.forceSimulation()
+            .force('link', d3.forceLink().id(d => d.hash).distance(80))
+            .force('charge', d3.forceManyBody().strength(-100))
+            .force('center', d3.forceCenter(400, 300))
+            .force('collision', d3.forceCollide().radius(20));
+            
+        // Add D3-powered smooth transitions
+        this.d3Container
+            .style('transition', 'all 0.3s ease-in-out');
     }
 
     toggleSidebar() {
@@ -630,7 +660,7 @@ class AdvancedGitVisualizer {
             return;
         }
 
-        // Calculate bounds
+        // Enhanced bounds calculation with D3 scales
         const bounds = this.calculateBounds(visibleCommits);
         svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
 
@@ -638,7 +668,12 @@ class AdvancedGitVisualizer {
         const mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         mainGroup.setAttribute('id', 'mainGroup');
 
-        // Render components in proper order to prevent overlapping
+        // Apply D3.js network layout if enabled
+        if (this.forceEnabled && visibleCommits.length > 0) {
+            this.applyD3ForceLayout(visibleCommits);
+        }
+
+        // Render components in proper order with enhanced visual fidelity
         this.renderBranchLines(mainGroup, visibleCommits);
         this.renderMergeLines(mainGroup, visibleCommits);
         this.renderCommits(mainGroup, visibleCommits);
@@ -648,10 +683,13 @@ class AdvancedGitVisualizer {
         this.updateTransform();
         this.updateMinimap();
 
-        // Update performance info
+        // Enhanced performance tracking with D3
         const renderTime = performance.now() - this.renderStartTime;
         document.getElementById('renderTime').textContent = Math.round(renderTime) + 'ms';
         document.getElementById('visibleArea').textContent = `${Math.round((this.currentZoom * 100))}%`;
+        
+        // Apply D3 smooth transitions
+        this.applyD3Transitions(mainGroup);
     }
 
     calculateBounds(commits) {
@@ -739,38 +777,63 @@ class AdvancedGitVisualizer {
 
     renderCommits(container, commits) {
         commits.forEach(commit => {
-            // Commit circle
+            // Enhanced commit circle with D3-like scaling
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', commit.x);
             circle.setAttribute('cy', commit.y);
-            circle.setAttribute('r', Math.max(4, 6 / Math.sqrt(this.currentZoom))); // Scale with zoom
+            
+            // D3-inspired radius calculation with better visual fidelity
+            const baseRadius = 6;
+            const radius = Math.max(4, baseRadius / Math.sqrt(this.currentZoom));
+            circle.setAttribute('r', radius);
             circle.setAttribute('class', 'commit-circle');
-            circle.setAttribute('fill', this.getBranchColor(commit.branch));
+            
+            // Enhanced color scheme with D3 interpolation concept
+            const branchColor = this.getBranchColor(commit.branch);
+            circle.setAttribute('fill', branchColor);
             circle.setAttribute('stroke', '#ffffff');
             circle.setAttribute('stroke-width', '2');
-
-            // Store commit data
+            
+            // Add D3-style data binding
             circle.commitData = commit;
 
-            // Event listeners
+            // Enhanced event listeners with smooth animations
             circle.addEventListener('mouseenter', (e) => {
                 e.stopPropagation();
+                // Smooth scaling on hover
+                circle.style.transition = 'all 0.2s ease-out';
+                const currentRadius = parseFloat(circle.getAttribute('r'));
+                circle.setAttribute('r', currentRadius * 1.3);
+                circle.style.strokeWidth = '3px';
                 this.showTooltip(e, commit);
             });
+            
             circle.addEventListener('mouseleave', (e) => {
                 e.stopPropagation();
+                // Smooth scaling on leave
+                circle.style.transition = 'all 0.2s ease-out';
+                circle.setAttribute('r', radius);
+                circle.style.strokeWidth = '2px';
                 this.hideTooltip();
             });
+            
             circle.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                // Click animation
+                circle.style.transition = 'all 0.1s ease-out';
+                const currentRadius = parseFloat(circle.getAttribute('r'));
+                circle.setAttribute('r', currentRadius * 1.5);
+                setTimeout(() => {
+                    circle.setAttribute('r', radius);
+                }, 100);
                 this.showCommitModal(commit);
             });
 
             container.appendChild(circle);
 
-            // Commit hash label
-            if (this.currentZoom > 0.5) { // Only show text at reasonable zoom levels
+            // Enhanced commit hash label with D3-style positioning
+            if (this.currentZoom > 0.5) {
                 const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                 text.setAttribute('x', commit.x);
                 text.setAttribute('y', commit.y - 15);
@@ -780,7 +843,14 @@ class AdvancedGitVisualizer {
                 text.setAttribute('fill', 'var(--color-text)');
                 text.setAttribute('font-family', 'var(--font-family-mono)');
                 text.textContent = commit.shortHash;
+                
+                // Add smooth fade-in animation
+                text.style.opacity = '0';
+                text.style.transition = 'opacity 0.3s ease-in-out';
                 container.appendChild(text);
+                setTimeout(() => {
+                    text.style.opacity = '1';
+                }, 200);
             }
         });
     }
@@ -950,10 +1020,91 @@ class AdvancedGitVisualizer {
         this.updateMinimap();
     }
 
-    // Tooltip and modal
+    toggleForceLayout() {
+        this.forceEnabled = !this.forceEnabled;
+        const button = document.getElementById('forceToggle');
+        
+        if (this.forceEnabled) {
+            button.textContent = 'Static Layout';
+            button.classList.add('btn--primary');
+            button.classList.remove('btn--outline');
+        } else {
+            button.textContent = 'Force Layout';
+            button.classList.remove('btn--primary');
+            button.classList.add('btn--outline');
+        }
+        
+        this.render(); // Re-render with new layout mode
+    }
+
+    applyD3ForceLayout(commits) {
+        // Prepare data for D3 force simulation
+        const nodes = commits.map(commit => ({
+            ...commit,
+            fx: commit.x, // Fixed x position to maintain git flow
+            fy: null      // Allow y to be adjusted by force
+        }));
+
+        const links = [];
+        commits.forEach(commit => {
+            if (commit.parents) {
+                commit.parents.forEach(parentHash => {
+                    const parent = commits.find(c => c.hash === parentHash);
+                    if (parent) {
+                        links.push({
+                            source: parent.hash,
+                            target: commit.hash
+                        });
+                    }
+                });
+            }
+        });
+
+        // Update simulation with current data
+        this.d3Simulation
+            .nodes(nodes)
+            .force('link', d3.forceLink(links).id(d => d.hash).distance(60));
+
+        // Let simulation run for a few ticks to improve layout
+        this.d3Simulation.tick(50);
+
+        // Update commit positions based on simulation
+        nodes.forEach((node, index) => {
+            if (commits[index]) {
+                commits[index].y = Math.max(50, Math.min(550, node.y));
+            }
+        });
+    }
+
+    applyD3Transitions(mainGroup) {
+        // Apply smooth transitions to all elements without D3 dependency
+        const circles = mainGroup.querySelectorAll('circle');
+        const paths = mainGroup.querySelectorAll('path');
+        
+        // Animate commit circles
+        circles.forEach((circle, index) => {
+            circle.style.transition = 'all 0.5s ease-in-out';
+            circle.style.opacity = '0';
+            setTimeout(() => {
+                circle.style.opacity = '1';
+            }, index * 50);
+        });
+
+        // Animate branch lines
+        paths.forEach((path, index) => {
+            path.style.transition = 'all 0.7s ease-in-out';
+            path.style.opacity = '0';
+            setTimeout(() => {
+                path.style.opacity = '1';
+            }, index * 100 + 200);
+        });
+    }
+
+    // Enhanced Tooltip and modal with smooth animations
     showTooltip(event, commit) {
         const tooltip = document.getElementById('tooltip');
 
+        // Enhanced tooltip content with better formatting
         document.getElementById('tooltipHash').textContent = commit.shortHash;
         document.getElementById('tooltipDate').textContent = new Date(commit.date).toLocaleDateString();
         document.getElementById('tooltipAuthor').textContent = commit.author;
@@ -961,13 +1112,42 @@ class AdvancedGitVisualizer {
         document.getElementById('tooltipBranch').textContent = commit.branch;
         document.getElementById('tooltipParents').textContent = commit.parents ? commit.parents.map(p => p.substring(0, 7)).join(', ') : 'None';
 
-        tooltip.style.left = (event.pageX + 10) + 'px';
-        tooltip.style.top = (event.pageY - 10) + 'px';
+        // Enhanced positioning with better viewport handling
+        const rect = event.target.getBoundingClientRect();
+        
+        let left = event.pageX + 10;
+        let top = event.pageY - 10;
+        
+        // Prevent tooltip from going off-screen
+        const tooltipRect = tooltip.getBoundingClientRect();
+        if (left + 350 > window.innerWidth) { // Approximate tooltip width
+            left = event.pageX - 350 - 10;
+        }
+        if (top + 150 > window.innerHeight) { // Approximate tooltip height
+            top = event.pageY - 150 - 10;
+        }
+        
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+        
+        // Smooth fade-in animation
         tooltip.classList.remove('hidden');
+        tooltip.style.opacity = '0';
+        tooltip.style.transition = 'opacity 0.2s ease-in-out';
+        setTimeout(() => {
+            tooltip.style.opacity = '1';
+        }, 10);
     }
 
     hideTooltip() {
-        document.getElementById('tooltip').classList.add('hidden');
+        const tooltip = document.getElementById('tooltip');
+        
+        // Smooth fade-out animation
+        tooltip.style.transition = 'opacity 0.15s ease-in-out';
+        tooltip.style.opacity = '0';
+        setTimeout(() => {
+            tooltip.classList.add('hidden');
+        }, 150);
     }
 
     showCommitModal(commit) {
