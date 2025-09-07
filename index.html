@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Git Network Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Toolbar -->
+        <header class="toolbar">
+            <div class="toolbar-left">
+                <button class="btn btn--outline btn--sm" id="sidebarToggle">
+                    <span id="sidebarIcon">◀</span>
+                </button>
+                <h1>Git Network Visualizer</h1>
+                <span class="repo-name" id="repoName">sample-project</span>
+            </div>
+            <div class="toolbar-center">
+                <button class="btn btn--primary" id="importBtn">
+                    📁 Import JSON
+                </button>
+                <input type="file" id="fileInput" accept=".json" style="display: none;">
+                <button class="btn btn--outline" id="exportBtn">
+                    💾 Export SVG
+                </button>
+            </div>
+            <div class="toolbar-right">
+                <div class="zoom-controls">
+                    <button class="btn btn--sm btn--outline" id="zoomOut">-</button>
+                    <span id="zoomLevel">100%</span>
+                    <button class="btn btn--sm btn--outline" id="zoomIn">+</button>
+                    <button class="btn btn--sm btn--outline" id="resetView">Reset</button>
+                    <button class="btn btn--sm btn--outline" id="fitToScreen">Fit</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Left Sidebar -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-section">
+                    <h3>Repository Stats</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <span class="stat-value" id="totalCommits">0</span>
+                            <span class="stat-label">Commits</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="totalBranches">0</span>
+                            <span class="stat-label">Branches</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="totalAuthors">0</span>
+                            <span class="stat-label">Authors</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="visibleCommits">0</span>
+                            <span class="stat-label">Visible</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="section-header">
+                        <h3>Branch Filters</h3>
+                        <div class="filter-actions">
+                            <button class="btn btn--sm btn--outline" id="selectAllBranches">All</button>
+                            <button class="btn btn--sm btn--outline" id="deselectAllBranches">None</button>
+                        </div>
+                    </div>
+                    <div class="branch-search">
+                        <input type="text" class="form-control" id="branchSearch" placeholder="Search branches...">
+                    </div>
+                    <div class="branch-filters" id="branchFilters">
+                        <!-- Dynamic branch filters will be added here -->
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Time Range</h3>
+                    <div class="time-controls">
+                        <label class="form-label">From:</label>
+                        <input type="date" class="form-control" id="dateFrom">
+                        <label class="form-label">To:</label>
+                        <input type="date" class="form-control" id="dateTo">
+                        <button class="btn btn--sm btn--primary" id="applyTimeFilter">Apply Filter</button>
+                        <button class="btn btn--sm btn--outline" id="resetTimeFilter">Reset</button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Performance</h3>
+                    <div class="performance-info">
+                        <div class="info-item">
+                            <span class="info-label">Rendering:</span>
+                            <span class="info-value" id="renderTime">0ms</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Visible Area:</span>
+                            <span class="info-value" id="visibleArea">100%</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Visualization Area -->
+            <main class="visualization-container">
+                <div class="loading-overlay hidden" id="loadingOverlay">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-info">
+                        <p id="loadingText">Loading repository data...</p>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <span id="loadingProgress">0%</span>
+                    </div>
+                </div>
+                
+                <div class="error-message hidden" id="errorMessage">
+                    <h3>Error Loading Data</h3>
+                    <p id="errorText"></p>
+                </div>
+
+                <div class="success-message hidden" id="successMessage">
+                    <h3>✅ Data Imported Successfully</h3>
+                    <p id="successText"></p>
+                </div>
+
+                <!-- Navigation Controls -->
+                <div class="nav-controls">
+                    <div class="search-bar">
+                        <input type="text" class="form-control" id="commitSearch" placeholder="Search commit hash or message...">
+                        <button class="btn btn--sm btn--outline" id="searchBtn">🔍</button>
+                    </div>
+                </div>
+
+                <svg id="gitGraph" class="git-graph">
+                    <!-- Git visualization will be rendered here -->
+                </svg>
+                
+                <!-- Tooltip -->
+                <div class="tooltip hidden" id="tooltip">
+                    <div class="tooltip-header">
+                        <strong id="tooltipHash"></strong>
+                        <span id="tooltipDate"></span>
+                    </div>
+                    <div class="tooltip-content">
+                        <p><strong>Author:</strong> <span id="tooltipAuthor"></span></p>
+                        <p><strong>Message:</strong> <span id="tooltipMessage"></span></p>
+                        <p><strong>Branch:</strong> <span id="tooltipBranch"></span></p>
+                        <p><strong>Parents:</strong> <span id="tooltipParents"></span></p>
+                    </div>
+                </div>
+
+                <!-- Minimap -->
+                <div class="minimap" id="minimap">
+                    <svg id="minimapSvg" width="200" height="120">
+                        <rect id="viewportRect" stroke="#1FB8CD" stroke-width="1" fill="rgba(31, 184, 205, 0.2)"/>
+                    </svg>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Commit Detail Modal -->
+    <div class="modal hidden" id="commitModal">
+        <div class="modal-backdrop" id="modalBackdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Commit Details</h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="commit-detail">
+                    <p><strong>Hash:</strong> <code id="modalHash"></code></p>
+                    <p><strong>Short Hash:</strong> <code id="modalShortHash"></code></p>
+                    <p><strong>Author:</strong> <span id="modalAuthor"></span></p>
+                    <p><strong>Date:</strong> <span id="modalDate"></span></p>
+                    <p><strong>Message:</strong> <span id="modalMessage"></span></p>
+                    <p><strong>Parents:</strong> <code id="modalParents"></code></p>
+                    <p><strong>References:</strong> <span id="modalRefs"></span></p>
+                    <p><strong>Branch Lane:</strong> <span id="modalLane"></span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
