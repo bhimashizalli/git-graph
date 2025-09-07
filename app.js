@@ -1498,7 +1498,7 @@ class AdvancedGitVisualizer {
         document.getElementById('commitModal').classList.add('hidden');
     }
 
-    // Utility functions
+    // Enhanced keyboard shortcuts
     handleKeyboard(event) {
         // Don't interfere with form inputs
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
@@ -1520,15 +1520,118 @@ class AdvancedGitVisualizer {
                 this.resetView();
                 break;
             case 'f':
+            case 'F':
                 if (event.ctrlKey || event.metaKey) {
                     event.preventDefault();
                     document.getElementById('commitSearch').focus();
                 }
                 break;
             case 'Escape':
+                event.preventDefault();
                 this.hideModal();
+                this.hideEnhancedTooltip();
+                // Clear commit search
+                const searchInput = document.getElementById('commitSearch');
+                if (searchInput.value) {
+                    searchInput.value = '';
+                    this.searchCommits('');
+                }
+                break;
+            case 'r':
+            case 'R':
+                if (event.ctrlKey || event.metaKey) {
+                    event.preventDefault();
+                    this.resetView();
+                }
+                break;
+            case 's':
+            case 'S':
+                if (event.ctrlKey || event.metaKey) {
+                    event.preventDefault();
+                    this.exportSVG();
+                }
+                break;
+            case 'ArrowLeft':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panX += 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case 'ArrowRight':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panX -= 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case 'ArrowUp':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panY += 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case 'ArrowDown':
+                if (event.shiftKey) {
+                    event.preventDefault();
+                    this.panY -= 50;
+                    this.updateTransform();
+                    this.updateMinimap();
+                }
+                break;
+            case '?':
+                if (!event.ctrlKey && !event.metaKey) {
+                    event.preventDefault();
+                    this.showKeyboardShortcuts();
+                }
                 break;
         }
+    }
+
+    // Show keyboard shortcuts help
+    showKeyboardShortcuts() {
+        const shortcuts = `
+        <div style="font-family: var(--font-family-base); line-height: 1.6;">
+            <h3 style="margin-top: 0;">Keyboard Shortcuts</h3>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 14px;">
+                <strong>+/=</strong><span>Zoom in</span>
+                <strong>-</strong><span>Zoom out</span>
+                <strong>0</strong><span>Reset view</span>
+                <strong>Ctrl/Cmd + F</strong><span>Focus search</span>
+                <strong>Ctrl/Cmd + S</strong><span>Export SVG</span>
+                <strong>Ctrl/Cmd + R</strong><span>Reset view</span>
+                <strong>Shift + Arrow keys</strong><span>Pan view</span>
+                <strong>Escape</strong><span>Close dialogs/clear search</span>
+                <strong>?</strong><span>Show this help</span>
+            </div>
+        </div>
+        `;
+
+        // Create or update help modal
+        let helpModal = document.getElementById('keyboardHelpModal');
+        if (!helpModal) {
+            helpModal = document.createElement('div');
+            helpModal.id = 'keyboardHelpModal';
+            helpModal.className = 'modal';
+            helpModal.innerHTML = `
+                <div class="modal-backdrop" onclick="this.parentElement.classList.add('hidden')"></div>
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Help</h3>
+                        <button class="modal-close" onclick="this.closest('.modal').classList.add('hidden')">&times;</button>
+                    </div>
+                    <div class="modal-body" id="helpModalContent"></div>
+                </div>
+            `;
+            document.body.appendChild(helpModal);
+        }
+
+        document.getElementById('helpModalContent').innerHTML = shortcuts;
+        helpModal.classList.remove('hidden');
     }
 
     handleResize() {
